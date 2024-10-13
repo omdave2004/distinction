@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Room Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        h1 {
+            color: var(--text-color);
+        }
+        #chart-container {
+            width: 80%;
+            margin: 30px auto;
+        }
+        table {
+            width: 80%;
+            margin: 20px auto;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid var(--table-border);
+        }
+        th, td {
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: var(--table-header);
+        }
+        .button-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+        #heater-toggle {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background-color: #ccc;
+            border-radius: 30px;
+            cursor: pointer;
+            margin: 0 auto;
+        }
+        #toggle-switch {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            background-color: white;
+            border-radius: 50%;
+            top: 1px;
+            left: 1px;
+            transition: all 0.3s ease;
+        }
+        #heater-toggle.active {
+            background-color: #66bb6a;
+        }
+        #heater-toggle.active #toggle-switch {
+            left: 31px;
+        }
+        #status {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        #theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            cursor: pointer;
+        }
+        :root {
+            --bg-color: #f4f4f9;
+            --text-color: #333;
+            --table-border: #333;
+            --table-header: #f2f2f2;
+        }
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --text-color: #f4f4f9;
+            --table-border: #666;
+            --table-header: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Smart Room Dashboard</h1>
+
+    <!-- Dark/Light Mode Toggle -->
+    <div id="theme-toggle">🌓</div>
+
+    <!-- Temperature Chart -->
+    <div id="chart-container">
+        <canvas id="temperatureChart"></canvas>
+    </div>
+
+    <!-- Temperature Table -->
+    <table>
+        <thead>
+            <tr>
+                <th>Temperature (°C)</th>
+                <th>Time</th>
+                <th>Heater Status</th>
+            </tr>
+        </thead>
+        <tbody id="data-table">
+            <!-- Data will be populated here -->
+        </tbody>
+    </table>
+
+    <!-- Heater Control Toggle -->
+    <div class="button-container">
+        <div id="heater-toggle">
+            <div id="toggle-switch"></div>
+        </div>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        let isHeaterOn = false;
+
+        // Fetch data from API and update chart and table
+        async function fetchData() {
+            try {
+                const response = await fetch('http://localhost:3000/fetchTemperatures');
+                const data = await response.json();
+
+                // Update chart data
+                updateChart(data);
+
+                // Update table
+                const tableBody = document.getElementById('data-table');
+                tableBody.innerHTML = '';  // Clear existing rows
+                data.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.payload.temperature}°C</td>
+                        <td>${new Date(item.payload.time).toLocaleString()}</td>
+                        <td>${item.payload.heaterStatus}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        // Initialize Chart.js
+        const ctx = document.getElementById('temperatureChart').getContext('2d');
+        const temperatureChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Time labels
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    data: [] // Temperature data
+                }]
+            },
+            options: {
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)'
+                        },
+                        beginAtZero: false
+                    }
+                }
+            }
+        });
+
+        // Update the chart with new data
+        function updateChart(data) {
+            const timeLabels = data.map(item => new Date(item.payload.time).toLocaleTimeString());
+            const tempData = data.map(item => item.payload.temperature);
+
+            temperatureChart.data.labels = timeLabels;
+            temperatureChart.data.datasets[0].data = tempData;
+            temperatureChart.update();
+        }
+
+        // Heater Toggle Switch Control
+        const heaterToggle = document.getElementById('heater-toggle');
+        heaterToggle.addEventListener('click', () => {
+            heaterToggle.classList.toggle('active');
+            isHeaterOn = !isHeaterOn;
+
+            // Show heater status
+            document.getElementById('status').innerText = isHeaterOn ? 'Heater is ON' : 'Heater is OFF';
+
+            // Send data to backend (optional: MQTT publish logic)
+            // sendHeaterStatus(isHeaterOn ? "ON" : "OFF");
+        });
+
+        // Light/Dark Mode Toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        themeToggle.addEventListener('click', () => {
+            document.body.setAttribute('data-theme', document.body.getAttribute('data-theme') === 'dark' ? '' : 'dark');
+        });
+
+        // Fetch data initially and then every 5 seconds
+        fetchData();  // Initial fetch
+        setInterval(fetchData, 5000);  // Fetch every 5 seconds
+
+    </script>
+</body>
+</html>
